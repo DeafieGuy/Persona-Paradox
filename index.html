@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Persona Paradox</title>
+  <style>
+    .hidden { display: none; }
+    body { font-family: 'Poppins', sans-serif; padding: 20px; }
+    .persona-entry { margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    #score-display, #high-score-display { margin: 10px 0; font-weight: bold; }
+    #round-indicator { font-size: 1.2em; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <h1>🎭 Persona Paradox</h1>
+
+  <!-- Welcome Screen -->
+  <div id="welcome-screen">
+    <button onclick="startGame()">Start Game</button>
+    <button onclick="startMultiplayer()">Start Multiplayer</button>
+    <input type="text" id="playerNames" placeholder="Enter player names (comma separated)" />
+  </div>
+
+  <!-- Persona Creation Form -->
+  <div id="persona-form" class="hidden">
+    <h2>Create Your Persona</h2>
+    <input type="text" id="personaName" placeholder="Name" /><br/>
+    <input type="number" id="personaAge" placeholder="Age" /><br/>
+    <input type="text" id="personaLocation" placeholder="Location" /><br/>
+    <textarea id="personaBio" placeholder="Short bio..."></textarea><br/>
+    <button onclick="submitPersona()">Next</button>
+  </div>
+
+  <!-- Diary Entry Form -->
+  <div id="diary-form" class="hidden">
+    <h2>Diary Entries</h2>
+    <textarea id="entry1" placeholder="Entry 1"></textarea><br/>
+    <textarea id="entry2" placeholder="Entry 2"></textarea><br/>
+    <textarea id="entry3" placeholder="Entry 3"></textarea><br/>
+    <button onclick="submitDiaries()">Save Persona</button>
+  </div>
+
+  <!-- Guessing Game -->
+  <div id="guess-game" class="hidden">
+    <p id="current-player"></p>
+    <p id="round-indicator"></p>
+    <div id="guess-entries"></div>
+    <select id="guess-select"></select>
+    <button onclick="submitGuess()">Submit Guess</button>
+    <p id="guess-result"></p>
+  </div>
+
+  <!-- Scoreboard and Export -->
+  <div>
+    <p id="score-display"></p>
+    <p id="high-score-display"></p>
+    <button onclick="viewAllPersonas()">📖 View All Personas</button>
+    <button onclick="exportPersonas()">💾 Export Personas</button>
+    <button onclick="resetScore()">🔄 Reset Score</button>
+    <button onclick="clearAllPersonas()">🗑️ Clear All Personas</button>
+    <button onclick="shareScore()">📤 Share Score</button>
+    <p id="share-status"></p>
+  </div>
+
+  <!-- Persona List -->
+  <div id="persona-list"></div>
+
+  <!-- JavaScript -->
+  <script>
+    const MAX_ROUNDS = 5;
+    let score = JSON.parse(localStorage.getItem("personaParadoxScore")) || { correct: 0, total: 0 };
+    let highScore = JSON.parse(localStorage.getItem("personaParadoxHighScore")) || 0;
+    let players = [];
+    let currentPlayerIndex = 0;
+    let playerScores = {};
+    let multiplayerMode = false;
+    let currentGuess = null;
+    let currentAnswerIndex = null;
+    let round = 0;
+
+    window.onload = function () {
+      document.getElementById("score-display").textContent = `Score: ${score.correct}/${score.total}`;
+      document.getElementById("high-score-display").textContent = `🏆 High Score: ${highScore}`;
+    };
+
+    function startGame() {
+      document.getElementById("welcome-screen").classList.add("hidden");
+      document.getElementById("persona-form").classList.remove("hidden");
+    }
+
+    function submitPersona() {
+      document.getElementById("persona-form").classList.add("hidden");
+      document.getElementById("diary-form").classList.remove("hidden");
+    }
+
+    function submitDiaries() {
+      const persona = {
+        name: document.getElementById("personaName").value,
+        age: document.getElementById("personaAge").value,
+        location: document.getElementById("personaLocation").value,
+        bio: document.getElementById("personaBio").value,
+        entries: [
+          document.getElementById("entry1").value,
+          document.getElementById("entry2").value,
+          document.getElementById("entry3").value
+        ]
+      };
+
+      const savedList = JSON.parse(localStorage.getItem("personaParadoxList")) || [];
+      savedList.push(persona);
+      localStorage.setItem("personaParadoxList", JSON.stringify(savedList));
+
+      alert("Persona saved! You can now play the guessing game.");
+    }
+
+    function startMultiplayer() {
+      const nameInput = document.getElementById("playerNames").value.trim();
+      if (!nameInput) return alert("Enter at least two player names.");
+
+      players = nameInput.split(",").map(name => name.trim());
+      if (players.length < 2) return alert("You need at least 2 players for multiplayer.");
+
+      multiplayerMode = true;
+      currentPlayerIndex = 0;
+      round = 0;
+      playerScores = {};
+      players.forEach(name => (playerScores[name] = 0));
+
+      alert(`Multiplayer started with: ${players.join(", ")}`);
+      startGuessingGame();
+    }
+
+    function startGuessingGame() {
+      const personas = JSON.parse(localStorage.getItem("personaParadoxList")) || [];
+      if (personas.length < 2) return alert("At least 2 personas needed.");
+
+      if (multiplayerMode) {
+        document.getElementById("current-player").textContent = `🎮 Current Player: ${players[currentPlayerIndex]}`;
+      }
+
+      if (round >= MAX_ROUNDS) {
+        endGame();
+        return;
+      }
+
+      round++;
+      document.getElementById("round-indicator").textContent = `Round ${round} of ${MAX_ROUNDS}`;
+
+      currentAnswerIndex = Math.floor(Math.random() * personas.length);
+      currentGuess = personas[currentAnswerIndex];
+      const shuffledEntries = shuffleArray(currentGuess.entries);
+
+      document.getElementById("guess-entries").innerHTML = `
+        <strong>Diary Entries (Random Order):</strong><br/>
+        <em>1.</em> ${shuffledEntries[0]}<br/>
+        <em>2.</em> ${shuffledEntries[1]}<br/>
+        <em>3.</em> ${shuffledEntries[2]}<br/>
+      `;
+
+      const select = document.getElementById("guess-select");
+      select.innerHTML = "";
+      shuffleArray(personas.map((p, i) => ({ name: p.name, index: i }))).forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.index;
+        opt.textContent = p.name;
+        select.appendChild(opt);
+      });
+
+      document.getElementById("guess-game").classList.remove("hidden");
+      document.getElementById("guess-result").textContent = "";
+    }
+
+    function submitGuess() {
+      const selectedIndex = parseInt(document.getElementById("guess-select").value);
+      score.total++;
+
+      if (selectedIndex === currentAnswerIndex) {
+        score.correct++;
+        if (multiplayerMode) {
+          playerScores[players[currentPlayerIndex]]++;
+        }
+        document.getElementById("guess-result").textContent = `✅ Correct! Score: ${score.correct}/${score.total}`;
+      } else {
+        const correctName = currentGuess.name;
+        document.getElementById("guess-result").textContent = `❌ Incorrect. It was ${correctName}. Score: ${score.correct}/${score.total}`;
+      }
+
+      if (round < MAX_ROUNDS) {
+        currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+        setTimeout(startGuessingGame, 1000);
+      } else {
+        endGame();
+      }
+
+      localStorage.setItem("personaParadoxScore", JSON.stringify(score));
+      document.getElementById("score-display").textContent = `Score: ${score.correct}/${score.total}`;
+    }
+
+    function endGame() {
+      if (score.correct > highScore) {
+        highScore = score.correct;
+        localStorage.setItem("personaParadoxHighScore", JSON.stringify(highScore));
+      }
+
+      document.getElementById("high-score-display").textContent = `🏆 High Score: ${highScore}`;
+
+      if (multiplayerMode) {
+        let result = "🏆 Multiplayer Results:\n";
+        for (const player of players) {
+          result += `${player}: ${playerScores[player]} points\n`;
+        }
+        alert(result);
+      }
+    }
+
+    function viewAllPersonas() {
+      const container = document.getElementById("persona-list");
+      const personas = JSON.parse(localStorage.getItem("personaParadoxList")) || [];
+      container.innerHTML = personas.length === 0 ? "<p>No personas saved yet.</p>" : "";
+
+      personas.forEach((p, i) => {
+        const div = document.createElement("div");
+        div.className = "persona-entry";
+        div.innerHTML = `
+          <strong>Persona #${i + 1}</strong><br/>
+          <strong>Name:</strong> ${p.name}<br/>
+          <strong>Age:</strong> ${p.age}<br/>
+          <strong>Location:</strong> ${p.location}<br/>
+          <strong>Bio:</strong> ${p.bio}<br/><br/>
+          <strong>Diary Entries:</strong><br/>
+          <em>1.</em> ${p.entries[0]}<br/>
+          <em>2.</em> ${p.entries[1]}<br/>
+          <em>3.</em> ${p.entries[2]}
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function resetScore() {
+      score = { correct: 0, total: 0 };
+      localStorage.setItem("personaParadoxScore", JSON.stringify(score));
+      document.getElementById("score-display").textContent = `Score: ${score.correct}/${score.total}`;
+    }
+
+    function clearAllPersonas() {
+      localStorage.removeItem("personaParadoxList");
+      alert("All personas cleared.");
+      viewAllPersonas();
+    }
+
+    function shareScore() {
+      const text = `I just played Persona Paradox and scored ${score.correct}/${score.total}! Can you beat me? #PersonaParadoxGame`;
+      navigator.clipboard.writeText(text)
+        .then(() => document.getElementById("share-status").textContent = "📋 Copied to clipboard!")
+        .catch(() => document.getElementById("share-status").textContent = "❌ Could not copy.");
+    }
+
+    function exportPersonas() {
+      const personas = JSON.parse(localStorage.getItem("personaParadoxList")) || [];
+      if (personas.length === 0) return alert("No personas to export.");
+
+      const blob = new Blob([JSON.stringify(personas, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "personas.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function shuffleArray(array) {
+      return array.map(val => ({ val, sort: Math.random() }))
+                  .sort((a, b) => a.sort - b.sort)
+                  .map(({ val }) => val);
+    }
+  </script>
+
+</body>
+</html>
